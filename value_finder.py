@@ -17,6 +17,10 @@ from dataclasses import dataclass
 
 MIN_BOOKMAKERS = 3  # si hay menos de 3 casas cotizando, no confiamos en el consenso
 MIN_EV_TO_FLAG = 0.03  # solo avisamos si el EV estimado supera +3%
+MAX_SANE_EV = 0.25  # un EV real (con consenso de varias casas) casi nunca supera esto.
+                     # Si lo supera, lo más probable es un dato corrupto (cuota vieja
+                     # de una casa que no actualizó, error de la API, etc), no una
+                     # joya escondida. Mejor descartarlo que confiar ciegamente.
 
 
 @dataclass
@@ -87,6 +91,10 @@ def analyze_market(match_name, commence_time, market_key, outcomes_by_bookmaker)
             continue
 
         ev = (fp * best_odds) - 1
+        if ev > MAX_SANE_EV:
+            # Casi seguro es un dato corrupto (cuota desfasada, error de la API).
+            # Lo ignoramos en vez de mandarlo como si fuera una joya real.
+            continue
         if ev >= MIN_EV_TO_FLAG:
             results.append(
                 ValueBet(
@@ -115,14 +123,22 @@ def find_value_bets(events):
         bookmakers = event.get("bookmakers", [])
 
         # Reorganizar por mercado: market_key -> {bookmaker: {outcome: odds}}
+        # IMPORTANTE: en "totals" cada outcome trae un "point" (la línea, ej. 2.5,
+        # 3.5...). Si no lo incluimos en el nombre, "Under" de la línea 2.5 se
+        # mezcla con "Under" de la línea 4.5 como si fueran la misma apuesta,
+        # lo cual arma un EV falso y absurdamente alto. Por eso metemos el
+        # punto en el nombre del resultado cuando existe.
         markets_data = {}
         for bm in bookmakers:
             book_name = bm.get("title", bm.get("key", "desconocida"))
             for market in bm.get("markets", []):
                 mkey = market.get("key")
-                outcomes = {
-                    o["name"]: o["price"] for o in market.get("outcomes", [])
-                }
+                outcomes = {}
+                for o in market.get("outcomes", []):
+                    name = o["name"]
+                    if "point" in o and o["point"] is not None:
+                        name = f"{name} {o['point']}"
+                    outcomes[name] = o["price"]
                 markets_data.setdefault(mkey, {})[book_name] = outcomes
 
         for mkey, outcomes_by_bookmaker in markets_data.items():
