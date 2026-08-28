@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 MIN_BOOKMAKERS = 3  # si hay menos de 3 casas cotizando, no confiamos en el consenso
 MIN_EV_TO_FLAG = 0.03  # solo avisamos si el EV estimado supera +3%
-MAX_SANE_EV = 0.25  # un EV real (con consenso de varias casas) casi nunca supera esto.
+MAX_SANE_EV = 0.15  # con varias casas comparadas, un EV real rara vez supera esto.
                      # Si lo supera, lo más probable es un dato corrupto (cuota vieja
                      # de una casa que no actualizó, error de la API, etc), no una
                      # joya escondida. Mejor descartarlo que confiar ciegamente.
@@ -74,6 +74,14 @@ def analyze_market(match_name, commence_time, market_key, outcomes_by_bookmaker)
     for book_name, book_odds in outcomes_by_bookmaker.items():
         names = list(book_odds.keys())
         odds = [book_odds[n] for n in names]
+        # BLINDAJE IMPORTANTE: si esta casa no cotizó TODAS las opciones del
+        # mercado (ej. le falta el empate porque solo da moneyline de 2 vías),
+        # la excluimos del cálculo de consenso. Mezclar un "quitado de margen"
+        # de 2 opciones con uno de 3 opciones distorsiona la probabilidad y
+        # puede inflar artificialmente el valor de los equipos chicos.
+        # Igual la seguimos usando más abajo para buscar la mejor cuota.
+        if set(names) != all_outcome_names:
+            continue
         if len(odds) < 2:
             continue
         clean = remove_vig(odds)
@@ -153,6 +161,12 @@ def find_value_bets(events):
                 outcomes = {}
                 for o in market.get("outcomes", []):
                     name = o["name"]
+                    # Blindaje: en un mercado "totals" SOLO deben existir
+                    # resultados "Over"/"Under". Si aparece cualquier otra
+                    # cosa (como "Draw"), es un dato contaminado de la fuente
+                    # y lo descartamos en vez de confiar en él a ciegas.
+                    if mkey == "totals" and name not in ("Over", "Under"):
+                        continue
                     if "point" in o and o["point"] is not None:
                         name = f"{name} {o['point']}"
                     outcomes[name] = o["price"]
