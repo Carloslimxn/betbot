@@ -38,11 +38,21 @@ def run_daily_job():
         tg.send_message("⚪ Hoy no se detectó ninguna apuesta con valor esperado positivo claro. NO BET.")
         return
 
-    for bet in value_bets:
+    nuevos = [
+        b for b in value_bets
+        if not storage.was_already_sent_today(b.match_name, b.market, b.outcome_name)
+    ]
+
+    if not nuevos:
+        print("Todos los picks de hoy ya se habían mandado antes. No se repite nada.")
+        return
+
+    for bet in nuevos:
         pick_id = uuid.uuid4().hex[:8]
         text = format_bet_line(bet, 1)  # numeración simple, es un pick por mensaje
         storage.save_pick(pick_id, {
             "match_name": bet.match_name,
+            "market": bet.market,
             "outcome_name": bet.outcome_name,
             "best_odds": bet.best_odds,
             "best_bookmaker": bet.best_bookmaker,
