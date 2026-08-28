@@ -22,6 +22,13 @@ MAX_SANE_EV = 0.25  # un EV real (con consenso de varias casas) casi nunca super
                      # de una casa que no actualizó, error de la API, etc), no una
                      # joya escondida. Mejor descartarlo que confiar ciegamente.
 
+# Casas "sharp" (afinan su precio con mucha información, son las más difíciles
+# de ganarles). Si alguna está disponible para el partido, la usamos como
+# referencia principal de "probabilidad real" en vez de promediar parejo con
+# casas recreativas que a veces se equivocan o tardan en actualizar. Así
+# trabajan los apostadores profesionales de verdad.
+SHARP_BOOKMAKERS = ["Pinnacle"]
+
 
 @dataclass
 class ValueBet:
@@ -32,6 +39,7 @@ class ValueBet:
     best_bookmaker: str
     best_odds: float
     fair_probability: float
+    fair_source: str    # "sharp" (Pinnacle) o "consenso" (promedio de casas)
     ev: float
     n_bookmakers: int
 
@@ -62,7 +70,8 @@ def analyze_market(match_name, commence_time, market_key, outcomes_by_bookmaker)
 
     # Probabilidad "limpia" (sin vig) que da cada casa, por resultado
     clean_probs_per_outcome = {name: [] for name in all_outcome_names}
-    for book_odds in outcomes_by_bookmaker.values():
+    sharp_probs_per_outcome = {name: [] for name in all_outcome_names}
+    for book_name, book_odds in outcomes_by_bookmaker.items():
         names = list(book_odds.keys())
         odds = [book_odds[n] for n in names]
         if len(odds) < 2:
@@ -70,13 +79,20 @@ def analyze_market(match_name, commence_time, market_key, outcomes_by_bookmaker)
         clean = remove_vig(odds)
         for name, p in zip(names, clean):
             clean_probs_per_outcome[name].append(p)
+            if book_name in SHARP_BOOKMAKERS:
+                sharp_probs_per_outcome[name].append(p)
 
-    # Consenso = promedio de probabilidades limpias entre casas
-    fair_prob = {
-        name: sum(probs) / len(probs)
-        for name, probs in clean_probs_per_outcome.items()
-        if probs
-    }
+    # Si alguna casa "sharp" cotizó este resultado, usamos SU probabilidad como
+    # referencia (más confiable). Si no, usamos el promedio de todas las casas.
+    fair_prob = {}
+    fair_prob_source = {}
+    for name in all_outcome_names:
+        if sharp_probs_per_outcome.get(name):
+            fair_prob[name] = sum(sharp_probs_per_outcome[name]) / len(sharp_probs_per_outcome[name])
+            fair_prob_source[name] = "sharp"
+        elif clean_probs_per_outcome.get(name):
+            fair_prob[name] = sum(clean_probs_per_outcome[name]) / len(clean_probs_per_outcome[name])
+            fair_prob_source[name] = "consenso"
 
     # Buscar la mejor cuota disponible por resultado y comparar contra el consenso
     for outcome_name, fp in fair_prob.items():
@@ -105,6 +121,7 @@ def analyze_market(match_name, commence_time, market_key, outcomes_by_bookmaker)
                     best_bookmaker=best_book,
                     best_odds=round(best_odds, 2),
                     fair_probability=round(fp, 4),
+                    fair_source=fair_prob_source.get(outcome_name, "consenso"),
                     ev=round(ev, 4),
                     n_bookmakers=n_books,
                 )
