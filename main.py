@@ -40,16 +40,43 @@ def risk_label(bet: ValueBet) -> str:
         return "🟠 RIESGO ALTO (pocas casas cotizando, consenso débil)"
 
 
+def humanize_selection(bet: ValueBet) -> str:
+    """Convierte el nombre técnico del resultado en algo claro en español.
+    'Under 2.5' -> 'Menos de 2.5 goles'. 'Over 2.5' -> 'Más de 2.5 goles'.
+    Para 1X2 (h2h) deja el nombre del equipo/resultado tal cual, que ya es claro."""
+    if bet.market != "totals":
+        return bet.outcome_name
+
+    parts = bet.outcome_name.rsplit(" ", 1)
+    if len(parts) == 2 and parts[0] in ("Over", "Under"):
+        lado, linea = parts
+        texto = "Más de" if lado == "Over" else "Menos de"
+        return f"{texto} {linea} goles"
+    return bet.outcome_name
+
+
+def market_explanation(bet: ValueBet) -> str:
+    """Una línea corta explicando qué significa el mercado, para no tener
+    que preguntar cada vez."""
+    if bet.market == "h2h":
+        return "ℹ️ Apuestas a quién gana el partido (o empate)."
+    if bet.market == "totals":
+        return "ℹ️ Apuestas a cuántos goles/puntos habrá en total entre ambos equipos, sin importar quién gane."
+    return ""
+
+
 def format_bet_line(bet: ValueBet, idx: int) -> str:
-    market_label = "1X2/Moneyline" if bet.market == "h2h" else "Total (Over/Under)"
+    market_label = "Ganador del partido (1X2)" if bet.market == "h2h" else "Total de goles (Over/Under)"
     dt = bet.commence_time.replace("T", " ").replace("Z", " UTC")
+    fuente = "Pinnacle (casa de referencia)" if bet.fair_source == "sharp" else f"promedio de {bet.n_bookmakers} casas"
     return (
         f"<b>{idx}. {bet.match_name}</b>\n"
         f"🕒 {dt}\n"
         f"Mercado: {market_label}\n"
-        f"Selección: <b>{bet.outcome_name}</b>\n"
+        f"{market_explanation(bet)}\n"
+        f"Selección: <b>{humanize_selection(bet)}</b>\n"
         f"Mejor cuota: {bet.best_odds} ({bet.best_bookmaker})\n"
-        f"Prob. de consenso (sin margen): {bet.fair_probability*100:.1f}%\n"
+        f"Prob. real estimada (sin margen): {bet.fair_probability*100:.1f}% — {fuente}\n"
         f"EV estimado: <b>{bet.ev*100:+.1f}%</b>\n"
         f"Casas comparadas: {bet.n_bookmakers}\n"
         f"Riesgo: {risk_label(bet)}\n"
