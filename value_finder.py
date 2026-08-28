@@ -193,3 +193,4 @@ def find_value_bets(events):
     # Ordenar de mayor a menor EV
     all_value_bets = [b for b in all_value_bets if is_valid_bet(b)]
     all_value_bets.sort(key=lambda b: b.ev, reverse=True)
+    return all_value_bets
