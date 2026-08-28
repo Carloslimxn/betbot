@@ -14,6 +14,7 @@ Esto NO garantiza ganar la apuesta individual. Es una ventaja estadística
 que se paga a largo plazo, jugando muchas veces con disciplina de bankroll.
 """
 from dataclasses import dataclass
+import re
 
 MIN_BOOKMAKERS = 3  # si hay menos de 3 casas cotizando, no confiamos en el consenso
 MIN_EV_TO_FLAG = 0.03  # solo avisamos si el EV estimado supera +3%
@@ -138,6 +139,19 @@ def analyze_market(match_name, commence_time, market_key, outcomes_by_bookmaker)
     return results
 
 
+def is_valid_bet(bet: ValueBet) -> bool:
+    """Última línea de defensa: valida que el contenido del pick tenga sentido
+    para el mercado que dice ser, sin importar de qué casa/clave rara vino el
+    dato original. Si no calza, es más seguro descartarlo que mandarlo mal
+    etiquetado (ej. un nombre de equipo apareciendo como si fuera Over/Under)."""
+    if bet.market == "totals":
+        return bool(re.match(r"^(Over|Under) -?\d+(\.\d+)?$", bet.outcome_name))
+    if bet.market == "h2h":
+        home, _, away = bet.match_name.partition(" vs ")
+        return bet.outcome_name in (home.strip(), away.strip(), "Draw")
+    return False  # cualquier otra clave de mercado, no la reconocemos: no se manda
+
+
 def find_value_bets(events):
     """events: la respuesta cruda de The Odds API (lista de partidos)."""
     all_value_bets = []
@@ -177,5 +191,5 @@ def find_value_bets(events):
             all_value_bets.extend(bets)
 
     # Ordenar de mayor a menor EV
+    all_value_bets = [b for b in all_value_bets if is_valid_bet(b)]
     all_value_bets.sort(key=lambda b: b.ev, reverse=True)
-    return all_value_bets
