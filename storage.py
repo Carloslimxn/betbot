@@ -56,6 +56,22 @@ def get_pick(pick_id: str):
     return _load().get(pick_id)
 
 
+def was_already_sent_today(match_name: str, market: str, outcome_name: str) -> bool:
+    """Evita mandar el mismo pick repetido si /run-now se corre más de una vez
+    el mismo día (por prueba manual, redeploy, etc.)."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    data = _load()
+    for p in data.values():
+        if (
+            p.get("match_name") == match_name
+            and p.get("market") == market
+            and p.get("outcome_name") == outcome_name
+            and p.get("creado", "").startswith(today)
+        ):
+            return True
+    return False
+
+
 def compute_stats():
     """Calcula el historial real: solo cuenta picks donde el usuario dijo
     'apostar' Y ya se marcó el resultado."""
